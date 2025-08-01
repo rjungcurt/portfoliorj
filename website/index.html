@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aandelenportefeuille Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+
+        <header class="mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Mijn Aandelenportefeuille</h1>
+            <p class="text-gray-600 mt-1">Volg je investeringen in real-time.</p>
+        </header>
+
+        <!-- Portfolio Summary -->
+        <div id="portfolio-summary" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white p-4 rounded-lg shadow">
+                <h2 class="text-sm font-medium text-gray-500">Totale Waarde</h2>
+                <p id="total-value" class="text-2xl font-semibold text-gray-900">€0,00</p>
+            </div>
+            <div class="bg-white p-4 rounded-lg shadow">
+                <h2 class="text-sm font-medium text-gray-500">Totaal Winst/Verlies</h2>
+                <p id="total-gain-loss" class="text-2xl font-semibold text-gray-900">€0,00</p>
+            </div>
+             <div class="bg-white p-4 rounded-lg shadow col-span-2">
+                <h2 class="text-sm font-medium text-gray-500">Jouw Unieke Gebruikers-ID</h2>
+                <p id="user-id-display" class="text-sm font-mono text-gray-700 break-all mt-2">Laden...</p>
+                 <p class="text-xs text-gray-500 mt-1">Bewaar deze ID niet, deze wordt automatisch geladen.</p>
+            </div>
+        </div>
+
+        <!-- Add Stock Form -->
+        <div class="bg-white p-6 rounded-lg shadow mb-8">
+            <h2 class="text-xl font-bold mb-4">Nieuw Aandeel Toevoegen</h2>
+            <form id="add-stock-form" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div>
+                    <label for="stock-symbol" class="block text-sm font-medium text-gray-700">Ticker Symbool</label>
+                    <input type="text" id="stock-symbol" placeholder="bv. AAPL" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label for="stock-shares" class="block text-sm font-medium text-gray-700">Aantal Aandelen</label>
+                    <input type="number" id="stock-shares" step="any" placeholder="bv. 10" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label for="purchase-price" class="block text-sm font-medium text-gray-700">Aankoopprijs (€)</label>
+                    <input type="number" id="purchase-price" step="any" placeholder="bv. 150.50" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <button type="submit" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 h-10">Toevoegen</button>
+            </form>
+            <p id="form-error" class="text-red-500 text-sm mt-2"></p>
+        </div>
+
+        <!-- Portfolio List -->
+        <div>
+            <h2 class="text-xl font-bold mb-4">Jouw Aandelen</h2>
+            <div id="portfolio-list" class="space-y-4">
+                <!-- Stock items will be injected here -->
+                <div id="loader-container" class="flex justify-center items-center h-32">
+                    <div class="loader"></div>
+                    <p class="ml-4 text-gray-600">Portefeuille laden...</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- API Key Notice -->
+        <div class="mt-8 text-center text-xs text-gray-500">
+            <p>Aandelenkoersen geleverd door Financial Modeling Prep. Voor onbeperkt gebruik is een gratis API-sleutel nodig.</p>
+            <p>Deze app gebruikt een demo-eindpunt. Voor live data, vervang de API-sleutel in de code.</p>
+        </div>
+
+    </div>
+
+    <!-- Firebase and App Logic -->
+    <script type="module">
+        // Import Firebase modules
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, addDoc, deleteDoc, onSnapshot, query, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- CONFIGURATION ---
+        // IMPORTANT: A real API key from a service like Financial Modeling Prep is recommended for production use.
+        // Get a free key from https://site.financialmodelingprep.com/developer/docs
+        const FMP_API_KEY = "demo"; // Using demo key, which has limitations.
+
+        // Firebase configuration is provided by the environment
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "YOUR_API_KEY", authDomain: "...", projectId: "..." };
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-portfolio-app';
+        
+        // --- INITIALIZATION ---
+        let app, auth, db;
+        let userId = null;
+        let portfolio = []; // Local cache of the portfolio
+        let portfolioListener = null; // To hold the onSnapshot unsubscribe function
+
+        // DOM elements
+        const totalValueEl = document.getElementById('total-value');
+        const totalGainLossEl = document.getElementById('total-gain-loss');
+        const portfolioListEl = document.getElementById('portfolio-list');
+        const addStockForm = document.getElementById('add-stock-form');
+        const stockSymbolInput = document.getElementById('stock-symbol');
+        const stockSharesInput = document.getElementById('stock-shares');
+        const purchasePriceInput = document.getElementById('purchase-price');
+        const formErrorEl = document.getElementById('form-error');
+        const loaderContainer = document.getElementById('loader-container');
+        const userIdDisplayEl = document.getElementById('user-id-display');
+
+        // --- MAIN APP LOGIC ---
+        async function main() {
+            // Initialize Firebase
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            setLogLevel('debug'); // Enable detailed logging for debugging
+
+            // Listen for authentication state changes
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    console.log("User is signed in with UID:", user.uid);
+                    userId = user.uid;
+                    userIdDisplayEl.textContent = userId;
+                    // Now that we have a user, listen for portfolio changes
+                    listenForPortfolioChanges();
+                } else {
+                    console.log("User is not signed in. Attempting anonymous sign-in.");
+                    userId = null;
+                    userIdDisplayEl.textContent = "Niet ingelogd.";
+                    // If there's an old listener, detach it
+                    if (portfolioListener) {
+                        portfolioListener();
+                    }
+                    // Try to sign in
+                    await signIn();
+                }
+            });
+        }
+
+        async function signIn() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                    console.log("Signed in with custom token.");
+                } else {
+                    await signInAnonymously(auth);
+                    console.log("Signed in anonymously.");
+                }
+            } catch (error) {
+                console.error("Error signing in:", error);
+                userIdDisplayEl.textContent = "Authenticatie mislukt.";
+                loaderContainer.innerHTML = `<p class="text-red-500">Kon niet inloggen. Vernieuw de pagina om het opnieuw te proberen.</p>`;
+            }
+        }
+
+        // --- FIRESTORE & DATA HANDLING ---
+        function listenForPortfolioChanges() {
+            if (!userId) return;
+
+            const portfolioCollectionPath = `artifacts/${appId}/users/${userId}/stocks`;
+            const q = query(collection(db, portfolioCollectionPath));
+
+            // Unsubscribe from any previous listener
+            if (portfolioListener) {
+                portfolioListener();
+            }
+
+            portfolioListener = onSnapshot(q, (querySnapshot) => {
+                console.log("Received portfolio update from Firestore.");
+                portfolio = [];
+                querySnapshot.forEach((doc) => {
+                    portfolio.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // Once we have the portfolio, fetch current prices and render
+                fetchPricesAndRender();
+                
+            }, (error) => {
+                console.error("Error listening to portfolio changes: ", error);
+                loaderContainer.innerHTML = `<p class="text-red-500">Fout bij het laden van de portefeuille.</p>`;
+            });
+        }
+
+        async function addStock(symbol, shares, purchasePrice) {
+            if (!userId) {
+                formErrorEl.textContent = "Je moet ingelogd zijn om een aandeel toe te voegen.";
+                return;
+            }
+            try {
+                const portfolioCollectionPath = `artifacts/${appId}/users/${userId}/stocks`;
+                await addDoc(collection(db, portfolioCollectionPath), {
+                    symbol: symbol.toUpperCase(),
+                    shares: Number(shares),
+                    purchasePrice: Number(purchasePrice)
+                });
+                console.log("Stock added to Firestore:", symbol);
+                formErrorEl.textContent = "";
+                addStockForm.reset();
+            } catch (error) {
+                console.error("Error adding stock: ", error);
+                formErrorEl.textContent = "Kon aandeel niet toevoegen. Probeer het opnieuw.";
+            }
+        }
+
+        async function deleteStock(stockId) {
+            if (!userId) return;
+            try {
+                const docPath = `artifacts/${appId}/users/${userId}/stocks/${stockId}`;
+                await deleteDoc(doc(db, docPath));
+                console.log("Stock deleted from Firestore:", stockId);
+            } catch (error) {
+                console.error("Error deleting stock: ", error);
+            }
+        }
+
+        // --- API & RENDERING ---
+        async function fetchPricesAndRender() {
+            loaderContainer.style.display = 'flex';
+            if (portfolio.length === 0) {
+                renderPortfolio([]); // Render empty state
+                return;
+            }
+
+            const symbols = portfolio.map(stock => stock.symbol).join(',');
+            const url = `https://financialmodelingprep.com/api/v3/quote-short/${symbols}?apikey=${FMP_API_KEY}`;
+            
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`API request failed with status ${response.status}`);
+                }
+                const priceData = await response.json();
+
+                const portfolioWithPrices = portfolio.map(stock => {
+                    const stockPriceInfo = priceData.find(p => p.symbol === stock.symbol);
+                    return {
+                        ...stock,
+                        currentPrice: stockPriceInfo ? stockPriceInfo.price : null,
+                        volume: stockPriceInfo ? stockPriceInfo.volume : null,
+                    };
+                });
+                
+                renderPortfolio(portfolioWithPrices);
+
+            } catch (error) {
+                console.error("Error fetching stock prices:", error);
+                // Render with what we have, but show an error
+                renderPortfolio(portfolio.map(s => ({...s, currentPrice: null, error: "Prijs ophalen mislukt" })));
+            }
+        }
+
+        function renderPortfolio(portfolioData) {
+            portfolioListEl.innerHTML = ''; // Clear previous list
+            
+            if (portfolioData.length === 0) {
+                loaderContainer.style.display = 'none';
+                portfolioListEl.innerHTML = `<div class="text-center py-10 px-6 bg-white rounded-lg shadow"><p class="text-gray-500">Je portefeuille is leeg. Voeg een aandeel toe om te beginnen.</p></div>`;
+                updateSummary(0, 0);
+                return;
+            }
+
+            let totalValue = 0;
+            let totalCost = 0;
+
+            portfolioData.forEach(stock => {
+                const purchaseValue = stock.shares * stock.purchasePrice;
+                const currentValue = stock.currentPrice ? stock.shares * stock.currentPrice : null;
+                const gainLoss = currentValue !== null ? currentValue - purchaseValue : null;
+
+                if (currentValue !== null) {
+                    totalValue += currentValue;
+                    totalCost += purchaseValue;
+                }
+
+                const gainLossColor = gainLoss > 0 ? 'text-green-600' : (gainLoss < 0 ? 'text-red-600' : 'text-gray-600');
+                
+                const stockCard = `
+                    <div class="bg-white p-4 rounded-lg shadow grid grid-cols-2 md:grid-cols-5 gap-4 items-center">
+                        <!-- Stock Symbol -->
+                        <div class="md:col-span-1">
+                            <p class="font-bold text-lg text-indigo-600">${stock.symbol}</p>
+                            <p class="text-sm text-gray-500">${stock.shares} aandelen</p>
+                        </div>
+                        <!-- Purchase Info -->
+                        <div class="md:col-span-1 text-right md:text-left">
+                            <p class="text-sm text-gray-500">Aankoop</p>
+                            <p class="font-medium">€${stock.purchasePrice.toFixed(2)}</p>
+                        </div>
+                        <!-- Current Info -->
+                        <div class="md:col-span-1 text-left md:text-left">
+                            <p class="text-sm text-gray-500">Huidige Prijs</p>
+                            ${stock.currentPrice !== null ? `<p class="font-medium">€${stock.currentPrice.toFixed(2)}</p>` : `<p class="text-sm text-yellow-600">${stock.error || 'Laden...'}</p>`}
+                        </div>
+                        <!-- Gain/Loss -->
+                        <div class="md:col-span-1 text-right md:text-left">
+                            <p class="text-sm text-gray-500">Winst/Verlies</p>
+                            ${gainLoss !== null ? `<p class="font-semibold ${gainLossColor}">€${gainLoss.toFixed(2)}</p>` : `<p class="text-sm text-gray-500">-</p>`}
+                        </div>
+                        <!-- Actions -->
+                        <div class="col-span-2 md:col-span-1 flex justify-end items-center">
+                            <button data-id="${stock.id}" class="delete-btn text-gray-400 hover:text-red-600 transition-colors p-2 rounded-full">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                portfolioListEl.innerHTML += stockCard;
+            });
+            
+            loaderContainer.style.display = 'none';
+            
+            const totalGainLoss = totalValue - totalCost;
+            updateSummary(totalValue, totalGainLoss);
+        }
+
+        function updateSummary(totalValue, totalGainLoss) {
+            totalValueEl.textContent = `€${totalValue.toFixed(2)}`;
+            
+            const gainLossColor = totalGainLoss > 0 ? 'text-green-600' : (totalGainLoss < 0 ? 'text-red-600' : 'text-gray-900');
+            totalGainLossEl.textContent = `€${totalGainLoss.toFixed(2)}`;
+            totalGainLossEl.className = `text-2xl font-semibold ${gainLossColor}`;
+        }
+
+        // --- EVENT LISTENERS ---
+        addStockForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const symbol = stockSymbolInput.value.trim();
+            const shares = stockSharesInput.value;
+            const purchasePrice = purchasePriceInput.value;
+
+            if (symbol && shares > 0 && purchasePrice >= 0) {
+                addStock(symbol, shares, purchasePrice);
+            } else {
+                formErrorEl.textContent = "Vul alle velden correct in.";
+            }
+        });
+
+        portfolioListEl.addEventListener('click', (e) => {
+            const deleteButton = e.target.closest('.delete-btn');
+            if (deleteButton) {
+                const stockId = deleteButton.dataset.id;
+                if (confirm('Weet je zeker dat je dit aandeel wilt verwijderen?')) {
+                    deleteStock(stockId);
+                }
+            }
+        });
+
+        // --- START THE APP ---
+        main();
+
+    </script>
+</body>
+</html>
